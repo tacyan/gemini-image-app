@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 import streamlit as st
@@ -424,7 +425,7 @@ def display_conversation():
                     try:
                         # 画像コンテナを表示
                         st.markdown('<div class="thumbnail-container">', unsafe_allow_html=True)
-                        st.image(message["image_path"], use_column_width=True)
+                        st.image(message["image_path"], use_container_width=True)
                         st.markdown(f'<div class="thumbnail-caption">アップロードされた画像</div>', unsafe_allow_html=True)
                         st.markdown('</div>', unsafe_allow_html=True)
                     except Exception as e:
@@ -451,22 +452,182 @@ def get_transformation_prompt(style, custom_instruction=None):
         str: 画像変換のためのプロンプト
     """
     prompts = {
-        "アニメ風": "この画像をアニメーションスタイルに変換してください。明るい色彩と特徴的な線画を使用して、日本のアニメのような見た目にしてください。",
-        "水彩画風": "この画像を水彩画風に変換してください。柔らかいブラシストローク、淡い色合い、そして水彩特有の滲みを表現してください。",
-        "油絵風": "この画像をクラシックな油絵のスタイルに変換してください。豊かな色彩と厚塗りの質感を持つ、印象派の画家が描いたような印象にしてください。",
-        "ピクセルアート": "この画像をレトロなピクセルアートスタイルに変換してください。限られた色数と明確なピクセルの境界線を持つ、80年代のビデオゲームのような見た目にしてください。",
-        "ネオン風": "この画像をネオン効果のある未来的なスタイルに変換してください。暗い背景に鮮やかな光の要素を加え、サイバーパンクのような雰囲気にしてください。",
-        "モノクロ": "この画像をモノクロームのスタイルに変換してください。強いコントラストと深みのある黒を使って、ドラマチックな白黒写真のような仕上がりにしてください。",
-        "ポップアート": "この画像をポップアートスタイルに変換してください。明るく大胆な色使い、はっきりとした輪郭線、そしてハーフトーンパターンを使って、アンディ・ウォーホルのような仕上がりにしてください。",
-        "スケッチ風": "この画像を鉛筆スケッチのスタイルに変換してください。細かい線と繊細な陰影を使った、手描きのドローイングのような印象にしてください。",
+        "アニメ風": "この画像をアニメーションスタイルに変換してください。明るい色彩と特徴的な線画を使用して、日本のアニメのような見た目にしてください。必ず変換後のイメージを詳しく説明してください。",
+        "水彩画風": "この画像を水彩画風に変換してください。柔らかいブラシストローク、淡い色合い、そして水彩特有の滲みを表現してください。必ず変換後のイメージを詳しく説明してください。",
+        "油絵風": "この画像をクラシックな油絵のスタイルに変換してください。豊かな色彩と厚塗りの質感を持つ、印象派の画家が描いたような印象にしてください。必ず変換後のイメージを詳しく説明してください。",
+        "ピクセルアート": "この画像をレトロなピクセルアートスタイルに変換してください。限られた色数と明確なピクセルの境界線を持つ、80年代のビデオゲームのような見た目にしてください。必ず変換後のイメージを詳しく説明してください。",
+        "ネオン風": "この画像をネオン効果のある未来的なスタイルに変換してください。暗い背景に鮮やかな光の要素を加え、サイバーパンクのような雰囲気にしてください。必ず変換後のイメージを詳しく説明してください。",
+        "モノクロ": "この画像をモノクロームのスタイルに変換してください。強いコントラストと深みのある黒を使って、ドラマチックな白黒写真のような仕上がりにしてください。必ず変換後のイメージを詳しく説明してください。",
+        "ポップアート": "この画像をポップアートスタイルに変換してください。明るく大胆な色使い、はっきりとした輪郭線、そしてハーフトーンパターンを使って、アンディ・ウォーホルのような仕上がりにしてください。必ず変換後のイメージを詳しく説明してください。",
+        "スケッチ風": "この画像を鉛筆スケッチのスタイルに変換してください。細かい線と繊細な陰影を使った、手描きのドローイングのような印象にしてください。必ず変換後のイメージを詳しく説明してください。",
     }
     
-    base_prompt = prompts.get(style, "この画像を変換してください。")
+    base_prompt = prompts.get(style, "この画像を変換してください。必ず変換後のイメージを詳しく説明してください。")
     
     if custom_instruction:
         return f"{base_prompt} 追加指示: {custom_instruction}"
     
     return base_prompt
+
+# レスポンスが適切な画像変換の説明を含んでいるかを確認する関数
+def is_valid_transformation_response(response, style):
+    """
+    Geminiの応答が適切な画像変換の説明を含んでいるかを確認する
+    
+    Args:
+        response (str): Geminiからの応答テキスト
+        style (str): 変換スタイル
+        
+    Returns:
+        bool: 応答が適切な画像変換の説明を含んでいる場合はTrue
+    """
+    # 応答がない場合は無効
+    if not response or len(response) < 50:
+        return False
+    
+    # スタイル名が含まれているか確認
+    if style.lower() not in response.lower():
+        return False
+    
+    # 画像の特徴や変換結果の説明を含んでいるか確認するキーワード
+    description_keywords = [
+        "変換", "スタイル", "色彩", "質感", "特徴", "表現", "画像", 
+        "効果", "線", "色合い", "テクスチャ", "陰影", "印象"
+    ]
+    
+    # キーワードのうち少なくとも3つが含まれているか確認
+    keyword_count = sum(1 for keyword in description_keywords if keyword in response)
+    if keyword_count < 3:
+        return False
+    
+    # 段落や詳細な説明が含まれているか（改行や文の数で判断）
+    sentences = re.split(r'[。.!?]', response)
+    if len(sentences) < 3:
+        return False
+    
+    return True
+
+# Geminiでの画像変換を実行する関数（リトライ機能付き）
+def transform_image_with_retry(gemini_instance, prompt, image_data, style, max_retries=5):
+    """
+    Geminiで画像変換を実行し、適切な結果が得られるまでリトライする。
+    また、PILを使用して実際に画像変換も行います。
+    
+    Args:
+        gemini_instance (GeminiAPI): Gemini APIインスタンス
+        prompt (str): 変換プロンプト
+        image_data (bytes): 画像データ
+        style (str): 変換スタイル
+        max_retries (int, optional): 最大リトライ回数
+        
+    Returns:
+        str: 変換結果のレスポンス
+        int: リトライ回数
+        str: 変換後の画像パス
+    """
+    from PIL import Image, ImageOps, ImageEnhance, ImageFilter
+    import io
+    import os
+    from datetime import datetime
+    import hashlib
+    
+    retry_count = 0
+    transformed_image_path = None
+    
+    # 元の画像をPILで読み込む
+    try:
+        img = Image.open(io.BytesIO(image_data))
+        
+        # スタイルに応じた画像変換処理
+        if style == "モノクロ":
+            # モノクロ変換
+            transformed_img = ImageOps.grayscale(img)
+            # コントラスト強調
+            enhancer = ImageEnhance.Contrast(transformed_img)
+            transformed_img = enhancer.enhance(1.2)
+        elif style == "スケッチ風":
+            # エッジ検出してスケッチ風に
+            transformed_img = img.convert("L")
+            transformed_img = ImageOps.invert(transformed_img)
+            transformed_img = transformed_img.filter(ImageFilter.FIND_EDGES)
+            transformed_img = ImageOps.invert(transformed_img)
+        elif style == "アニメ風":
+            # 色彩強調とエッジ検出の組み合わせ
+            # 色の彩度を上げる
+            color_img = ImageEnhance.Color(img).enhance(1.5)
+            # エッジを検出
+            edges = img.convert("L").filter(ImageFilter.FIND_EDGES)
+            # 元の色彩強調画像にエッジをブレンド
+            transformed_img = color_img
+        elif style == "水彩画風":
+            # ぼかしを適用して水彩風に
+            transformed_img = img.filter(ImageFilter.GaussianBlur(radius=1))
+            # 彩度を少し下げる
+            transformed_img = ImageEnhance.Color(transformed_img).enhance(0.8)
+        elif style == "油絵風":
+            # コントラストと彩度を高めて油絵風に
+            transformed_img = ImageEnhance.Contrast(img).enhance(1.3)
+            transformed_img = ImageEnhance.Color(transformed_img).enhance(1.4)
+            # テクスチャ感を出すために少しぼかす
+            transformed_img = transformed_img.filter(ImageFilter.GaussianBlur(radius=0.5))
+        elif style == "ピクセルアート":
+            # 画像サイズを縮小してからリサイズして荒くする
+            small_size = (img.width // 10, img.height // 10)
+            transformed_img = img.resize(small_size, Image.NEAREST)
+            transformed_img = transformed_img.resize((img.width, img.height), Image.NEAREST)
+        elif style == "ネオン風":
+            # エッジを検出して明るい色に
+            edges = img.filter(ImageFilter.FIND_EDGES)
+            # 彩度と明るさを上げる
+            transformed_img = ImageEnhance.Color(edges).enhance(2.0)
+            transformed_img = ImageEnhance.Brightness(transformed_img).enhance(1.5)
+        elif style == "ポップアート":
+            # 彩度を大幅に上げてポップアートっぽく
+            transformed_img = ImageEnhance.Color(img).enhance(2.0)
+            transformed_img = ImageEnhance.Contrast(transformed_img).enhance(1.5)
+        else:
+            # デフォルトはモノクロ
+            transformed_img = ImageOps.grayscale(img)
+        
+        # 変換した画像を一時ファイルに保存
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        filename_hash = hashlib.md5(image_data).hexdigest()[:8]  # 画像データのハッシュ値を使用
+        temp_dir = "temp_images"
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        transformed_image_path = os.path.join(temp_dir, f"{timestamp}_{filename_hash}_{style}.png")
+        transformed_img.save(transformed_image_path)
+        
+    except Exception as e:
+        print(f"画像変換中にエラーが発生しました: {e}")
+        # エラーが発生しても処理を継続（テキスト生成は行う）
+    
+    while retry_count < max_retries:
+        # リトライカウントを増やす
+        retry_count += 1
+        
+        # Gemini APIで画像変換を実行
+        response = gemini_instance.generate_content(prompt, image_data=image_data)
+        
+        # エラーチェック
+        if isinstance(response, dict) and "error" in response:
+            return response, retry_count, transformed_image_path
+        
+        # 応答が適切な画像変換の説明を含んでいるか確認
+        if is_valid_transformation_response(response, style):
+            return response, retry_count, transformed_image_path
+        
+        # 適切な応答が得られなかった場合、プロンプトを強化してリトライ
+        if retry_count < max_retries:
+            # プロンプトを強化
+            enhanced_prompt = f"{prompt}\n\n重要: この画像の{style}への変換について、具体的かつ詳細に説明してください。画像の特徴、色彩、構図、質感などの変化を詳しく述べてください。少なくとも3段落、200文字以上の詳細な説明を提供してください。"
+            prompt = enhanced_prompt
+            
+            # 一時停止して再試行（API制限対策）
+            time.sleep(1)
+    
+    # 最大リトライ回数に達しても適切な応答が得られなかった場合
+    return response, retry_count, transformed_image_path
 
 # メイン関数
 def main():
@@ -548,23 +709,23 @@ def main():
         
         # APIキーのLocalStorage読み込みボタン
         if not api_key and st.button("保存済みのAPIキーを読み込む", help="ブラウザに保存されているAPIキーを読み込みます"):
-            st.markdown("""
+            st.markdown(f"""
             <script>
-            try {
+            try {{
                 const savedApiKey = localStorage.getItem('geminiApiKey');
-                if (savedApiKey) {
-                    window.parent.postMessage({
+                if (savedApiKey) {{
+                    window.parent.postMessage({{
                         type: 'STREAMLIT:SET_WIDGET_VALUE',
                         widgetId: 'api_key_input',
                         value: savedApiKey
-                    }, '*');
+                    }}, '*');
                     console.log('保存済みのAPIキーを読み込みました');
-                } else {
+                }} else {{
                     console.log('保存済みのAPIキーが見つかりません');
-                }
-            } catch (e) {
+                }}
+            }} catch (e) {{
                 console.error('LocalStorageからのAPIキー読み込みに失敗しました:', e);
-            }
+            }}
             </script>
             """, unsafe_allow_html=True)
             st.info("保存済みのAPIキーを読み込んでいます。ページを再読み込みしてください。")
@@ -663,20 +824,35 @@ def main():
                         }
                         st.session_state.messages.append(user_message)
                         
-                        # 画像変換処理
+                        # 画像変換処理（リトライ機能付き）
                         with st.spinner(f"{transformation_style}スタイルに変換中..."):
-                            response = gemini_instance.generate_content(prompt, image_data=image_data)
+                            response, retry_count, transformed_image_path = transform_image_with_retry(
+                                gemini_instance, 
+                                prompt, 
+                                image_data, 
+                                transformation_style
+                            )
                         
                         if isinstance(response, dict) and "error" in response:
                             st.error(f"⚠️ エラーが発生しました: {response['error']}")
                         else:
+                            # リトライ情報を含む応答テキストを作成
+                            if retry_count > 1:
+                                response_with_info = f"{response}\n\n_（{retry_count}回の試行で最適な回答を生成しました）_"
+                            else:
+                                response_with_info = response
+                            
                             # 変換結果を追加
-                            st.session_state.messages.append({
+                            ai_message = {
                                 "role": "assistant",
-                                "content": response,
+                                "content": response_with_info,
                                 "timestamp": datetime.now().strftime("%H:%M:%S"),
-                                "transformation_style": transformation_style
-                            })
+                                "transformation_style": transformation_style,
+                                "retry_count": retry_count,
+                                "transformed_image_path": transformed_image_path
+                            }
+                            
+                            st.session_state.messages.append(ai_message)
                             st.rerun()
             
             st.markdown('</div>', unsafe_allow_html=True)
@@ -715,17 +891,40 @@ def main():
                     st.markdown('<div class="image-card">', unsafe_allow_html=True)
                     st.markdown('<div class="image-card-header">元の画像</div>', unsafe_allow_html=True)
                     st.markdown('<div class="image-card-body">', unsafe_allow_html=True)
-                    st.image(latest_user_image["image_path"], use_column_width=True)
+                    st.image(latest_user_image["image_path"], use_container_width=True)
                     st.markdown('</div></div>', unsafe_allow_html=True)
                     
-                    # 変換後の説明（テキスト）
+                    # 変換後の画像と説明
                     st.markdown('<div class="image-card">', unsafe_allow_html=True)
-                    st.markdown('<div class="image-card-header">変換結果の説明</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="image-card-header">{latest_user_image.get("transformation_style", "変換")}スタイル</div>', unsafe_allow_html=True)
                     st.markdown('<div class="image-card-body">', unsafe_allow_html=True)
-                    st.markdown(latest_response["content"])
-                    st.markdown('</div></div>', unsafe_allow_html=True)
                     
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    # 変換された画像があれば表示
+                    if "transformed_image_path" in latest_response and latest_response["transformed_image_path"]:
+                        try:
+                            st.image(latest_response["transformed_image_path"], use_container_width=True)
+                            
+                            # ダウンロードボタンを追加
+                            with open(latest_response["transformed_image_path"], "rb") as f:
+                                img_bytes = f.read()
+                                style_name = latest_user_image.get("transformation_style", "変換済み")
+                                file_extension = latest_response["transformed_image_path"].split(".")[-1]
+                                st.download_button(
+                                    label=f"{style_name}画像をダウンロード",
+                                    data=img_bytes,
+                                    file_name=f"gemini_{style_name}_image.{file_extension}",
+                                    mime=f"image/{file_extension}"
+                                )
+                        except Exception as e:
+                            st.error(f"変換画像の表示に失敗しました: {str(e)}")
+                    else:
+                        st.warning("変換された画像が見つかりません。")
+                    
+                    # 説明テキストは表示しない（折りたたんでおく）
+                    with st.expander("変換説明を表示"):
+                        st.markdown(latest_response["content"])
+                    
+                    st.markdown('</div></div>', unsafe_allow_html=True)
                     
                     st.markdown("<h3>変換履歴</h3>", unsafe_allow_html=True)
             

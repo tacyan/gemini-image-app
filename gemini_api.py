@@ -49,12 +49,12 @@ class GeminiAPI:
         safety_settings (dict): コンテンツ安全性のフィルタリング設定
     """
     
-    def __init__(self, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, model_name: str = "gemini-2.0-flash-exp"):
         """
         GeminiAPIクラスの初期化
         
         Args:
-            model_name (str): 使用するGeminiモデルの名前（デフォルト: "gemini-1.5-flash"）
+            model_name (str): 使用するGeminiモデルの名前（デフォルト: "gemini-2.0-flash-exp"）
         """
         # APIキーを環境変数から取得
         self.api_key = os.getenv("GEMINI_API_KEY", "")
@@ -77,7 +77,7 @@ class GeminiAPI:
         genai.configure(api_key=self.api_key)
         
         # モデル設定
-        self.model_name = model_name
+        self.model_name = "gemini-2.0-flash-exp"  # モデル名を固定
         
         # 生成設定
         self.generation_config = {

@@ -30,6 +30,7 @@ wheels/
 venv/
 env/
 ENV/
+venv_new/
 
 # ログ
 *.log

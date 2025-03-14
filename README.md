@@ -4,11 +4,17 @@ Google Geminiを使用した多機能チャットアプリケーションです�
 
 ## 特徴
 
-- 🤖 Google Gemini 1.5 Flash APIを使用した高性能AI会話
+- 🤖 Google Gemini 2.0 Flash Exp APIを使用した高性能AI会話
 - 🖼️ 画像のアップロードと分析に対応
 - 💾 ブラウザのLocalStorageを利用した会話履歴の保存
 - 🔒 安全なAPIキー管理
 - 📱 レスポンシブデザイン
+
+## 画像変換に関する重要な注意点
+
+**現バージョンの制限**: 現在のGemini APIは画像の変換説明のみを生成し、実際の変換後の画像は生成しません。そのため、アプリケーションでは変換後の画像は表示されず、説明テキストのみが表示されます。
+
+将来的な機能拡張として、別のAI画像生成APIと統合して実際の画像変換機能を追加する予定です。
 
 ## セットアップ
 
@@ -42,7 +48,40 @@ GEMINI_API_KEY=あなたのAPIキー
 
 ### 4. アプリケーションの起動
 
+#### 方法1: Streamlitコマンドを使用
+
 ```bash
+streamlit run app.py
+```
+
+#### 方法2: Pythonから直接実行
+
+```bash
+python -m streamlit run app.py
+```
+
+#### 方法3: バッチファイルを使用 (Windows)
+
+付属の`run_app.bat`をダブルクリックするだけで起動できます。
+
+```
+run_app.bat
+```
+
+#### エラー解決方法
+
+仮想環境で実行時に「Fatal error in launcher: Unable to create process」というエラーが表示される場合は、以下の方法をお試しください：
+
+1. システムのPythonを直接使用する
+```bash
+C:\path\to\python.exe -m streamlit run app.py
+```
+
+2. 新しい仮想環境を作成する
+```bash
+python -m venv venv_new
+venv_new\Scripts\activate
+pip install -r requirements.txt
 streamlit run app.py
 ```
 
@@ -61,6 +100,7 @@ streamlit run app.py
 - `utils.py`: ユーティリティ関数
 - `.env`: 環境変数（APIキーなど）
 - `requirements.txt`: 依存パッケージリスト
+- `run_app.bat`: アプリ起動用バッチファイル (Windows)
 
 ## セキュリティ注意事項
 
