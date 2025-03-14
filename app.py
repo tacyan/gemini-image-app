@@ -425,7 +425,7 @@ def display_conversation():
                     try:
                         # 画像コンテナを表示
                         st.markdown('<div class="thumbnail-container">', unsafe_allow_html=True)
-                        st.image(message["image_path"], use_container_width=True)
+                        st.image(message["image_path"], use_column_width=True)
                         st.markdown(f'<div class="thumbnail-caption">アップロードされた画像</div>', unsafe_allow_html=True)
                         st.markdown('</div>', unsafe_allow_html=True)
                     except Exception as e:
@@ -452,6 +452,7 @@ def get_transformation_prompt(style, custom_instruction=None):
         str: 画像変換のためのプロンプト
     """
     prompts = {
+        "指定なし": "この画像に対して、一般的な分析と説明を行ってください。画像の内容、特徴、主要な要素について詳しく説明してください。必ず画像の詳細な説明を含めてください。",
         "アニメ風": "この画像をアニメーションスタイルに変換してください。明るい色彩と特徴的な線画を使用して、日本のアニメのような見た目にしてください。必ず変換後のイメージを詳しく説明してください。",
         "水彩画風": "この画像を水彩画風に変換してください。柔らかいブラシストローク、淡い色合い、そして水彩特有の滲みを表現してください。必ず変換後のイメージを詳しく説明してください。",
         "油絵風": "この画像をクラシックな油絵のスタイルに変換してください。豊かな色彩と厚塗りの質感を持つ、印象派の画家が描いたような印象にしてください。必ず変換後のイメージを詳しく説明してください。",
@@ -460,6 +461,7 @@ def get_transformation_prompt(style, custom_instruction=None):
         "モノクロ": "この画像をモノクロームのスタイルに変換してください。強いコントラストと深みのある黒を使って、ドラマチックな白黒写真のような仕上がりにしてください。必ず変換後のイメージを詳しく説明してください。",
         "ポップアート": "この画像をポップアートスタイルに変換してください。明るく大胆な色使い、はっきりとした輪郭線、そしてハーフトーンパターンを使って、アンディ・ウォーホルのような仕上がりにしてください。必ず変換後のイメージを詳しく説明してください。",
         "スケッチ風": "この画像を鉛筆スケッチのスタイルに変換してください。細かい線と繊細な陰影を使った、手描きのドローイングのような印象にしてください。必ず変換後のイメージを詳しく説明してください。",
+        "リアル風": "この画像をフォトリアリズムのスタイルに変換してください。写真のような精密さと現実的なディテール、自然な光と影の表現を施し、より鮮明で現実感のある印象に仕上げてください。必ず変換後のイメージを詳しく説明してください。",
     }
     
     base_prompt = prompts.get(style, "この画像を変換してください。必ず変換後のイメージを詳しく説明してください。")
@@ -485,8 +487,34 @@ def is_valid_transformation_response(response, style):
     if not response or len(response) < 50:
         return False
     
-    # スタイル名が含まれているか確認
-    if style.lower() not in response.lower():
+    # 「指定なし」の場合は画像の説明が含まれているかを確認
+    if style == "指定なし":
+        # 画像の説明に関するキーワード
+        description_keywords = [
+            "画像", "写真", "映像", "表示", "見える", "映っている", 
+            "特徴", "要素", "背景", "前景", "色彩", "構図"
+        ]
+        
+        # キーワードのうち少なくとも3つが含まれているか確認
+        keyword_count = sum(1 for keyword in description_keywords if keyword in response)
+        if keyword_count < 3:
+            return False
+        
+        # 詳細な説明が含まれているか（文の数で判断）
+        sentences = re.split(r'[。.!?]', response)
+        if len(sentences) < 3:
+            return False
+        
+        return True
+    
+    # それ以外のスタイルの場合
+    # スタイル名が含まれているか確認（リアル風の場合は「リアル」も許容）
+    style_keywords = [style.lower()]
+    if style == "リアル風":
+        style_keywords.extend(["リアル", "フォトリアリズム", "写実的"])
+    
+    style_mentioned = any(keyword in response.lower() for keyword in style_keywords)
+    if not style_mentioned:
         return False
     
     # 画像の特徴や変換結果の説明を含んでいるか確認するキーワード
@@ -539,7 +567,13 @@ def transform_image_with_retry(gemini_instance, prompt, image_data, style, max_r
         img = Image.open(io.BytesIO(image_data))
         
         # スタイルに応じた画像変換処理
-        if style == "モノクロ":
+        if style == "指定なし":
+            # 元の画像のままで微調整のみ
+            transformed_img = img.copy()
+            # 少し彩度を上げる程度
+            enhancer = ImageEnhance.Color(transformed_img)
+            transformed_img = enhancer.enhance(1.1)
+        elif style == "モノクロ":
             # モノクロ変換
             transformed_img = ImageOps.grayscale(img)
             # コントラスト強調
@@ -585,6 +619,12 @@ def transform_image_with_retry(gemini_instance, prompt, image_data, style, max_r
             # 彩度を大幅に上げてポップアートっぽく
             transformed_img = ImageEnhance.Color(img).enhance(2.0)
             transformed_img = ImageEnhance.Contrast(transformed_img).enhance(1.5)
+        elif style == "リアル風":
+            # シャープネスとコントラストを上げてリアル感を出す
+            transformed_img = ImageEnhance.Sharpness(img).enhance(1.5)
+            transformed_img = ImageEnhance.Contrast(transformed_img).enhance(1.2)
+            # 色の自然さを保ちつつ、ディテールを強調
+            transformed_img = ImageEnhance.Color(transformed_img).enhance(1.1)
         else:
             # デフォルトはモノクロ
             transformed_img = ImageOps.grayscale(img)
@@ -787,7 +827,7 @@ def main():
             st.markdown("<div class='style-option-label'>変換スタイルを選択：</div>", unsafe_allow_html=True)
             transformation_style = st.selectbox(
                 "変換スタイル",
-                ["アニメ風", "水彩画風", "油絵風", "ピクセルアート", "ネオン風", "モノクロ", "ポップアート", "スケッチ風"],
+                ["指定なし", "アニメ風", "水彩画風", "油絵風", "ピクセルアート", "ネオン風", "モノクロ", "ポップアート", "スケッチ風", "リアル風"],
                 label_visibility="collapsed"
             )
             
@@ -891,7 +931,7 @@ def main():
                     st.markdown('<div class="image-card">', unsafe_allow_html=True)
                     st.markdown('<div class="image-card-header">元の画像</div>', unsafe_allow_html=True)
                     st.markdown('<div class="image-card-body">', unsafe_allow_html=True)
-                    st.image(latest_user_image["image_path"], use_container_width=True)
+                    st.image(latest_user_image["image_path"], use_column_width=True)
                     st.markdown('</div></div>', unsafe_allow_html=True)
                     
                     # 変換後の画像と説明
@@ -902,7 +942,7 @@ def main():
                     # 変換された画像があれば表示
                     if "transformed_image_path" in latest_response and latest_response["transformed_image_path"]:
                         try:
-                            st.image(latest_response["transformed_image_path"], use_container_width=True)
+                            st.image(latest_response["transformed_image_path"], use_column_width=True)
                             
                             # ダウンロードボタンを追加
                             with open(latest_response["transformed_image_path"], "rb") as f:
@@ -1020,9 +1060,29 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // 画像変換用のCtrl+Enterイベントを設定する関数
+    function setupCtrlEnterListener() {
+        // ドキュメント全体にCtrl+Enterイベントを設定
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+Enterが押された場合
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault(); // デフォルトの動作を防止
+                
+                // 画像変換モードの「変換を実行」ボタンを探して自動クリック
+                const transformButton = document.querySelector('.image-transformation-container button[type="primary"]');
+                if (transformButton) {
+                    transformButton.click();
+                    console.log('Ctrl+Enterで画像変換を実行しました');
+                }
+            }
+        });
+        console.log('ドキュメント全体にCtrl+Enterイベントを設定しました');
+    }
 
     // 初回実行
     setupEnterKeyListener();
+    setupCtrlEnterListener();
     
     // DOM変更の監視設定
     const observer = new MutationObserver(function(mutations) {
